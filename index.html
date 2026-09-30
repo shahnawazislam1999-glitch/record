@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Recorder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: #000; color: #fff; min-height: 100vh;
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 8vh 20px 60px;
+  }
+  #time { font-size: 68px; font-weight: 300; font-variant-numeric: tabular-nums; }
+  #status { color: #888; margin-top: 8px; font-size: 16px; min-height: 22px; text-align: center; }
+  canvas#wave { width: 100%; max-width: 560px; height: 120px; margin: 36px 0; display: block; }
+  .controls { display: flex; gap: 36px; align-items: center; }
+  button {
+    border: 0; cursor: pointer; color: #fff; background: #1c1c1e;
+    width: 64px; height: 64px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font: inherit;
+  }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #8ab4ff; outline-offset: 3px; }
+  button:disabled { opacity: .35; cursor: default; }
+  #main {
+    width: 88px; height: 88px; padding: 0;
+    background: conic-gradient(#ff9a6a, #d58aff, #5b8cff, #ff9a6a);
+  }
+  #main span {
+    width: 80px; height: 80px; border-radius: 50%; background: #000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #main i { width: 30px; height: 30px; border-radius: 50%; background: #e33; transition: .15s; }
+  #main.rec i { border-radius: 8px; background: linear-gradient(135deg, #ff9a6a, #7d8bff); }
+
+  .panel {
+    width: 100%; max-width: 560px; margin-top: 40px;
+    background: #0d0d0f; border: 1px solid #232327; border-radius: 20px;
+    padding: 20px 20px 12px;
+  }
+  .panel h2 { font-size: 18px; font-weight: 500; margin-bottom: 4px; }
+  .panel .sub { color: #7d7d86; font-size: 13px; margin-bottom: 14px; }
+  .group { padding: 14px 0 8px; border-top: 1px solid #1e1e22; }
+  .group:first-of-type { border-top: 0; }
+  .group h3 { font-size: 13px; font-weight: 500; color: #8a8a94; margin-bottom: 12px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .chip, .pill {
+    width: auto; height: auto; border-radius: 18px; padding: 9px 15px;
+    font-size: 14px; background: #1c1c1e; color: #ddd;
+  }
+  .chip.on { background: linear-gradient(135deg, #ff9a6a, #7d8bff); color: #000; font-weight: 600; }
+  .pill { padding: 10px 16px; font-size: 14px; color: #fff; }
+  .pill.danger { color: #ff7b72; }
+
+  .row { margin-bottom: 16px; }
+  .row .top { display: flex; justify-content: space-between; align-items: center; font-size: 15px; margin-bottom: 9px; }
+  .row .val { color: #9a9ab8; font-variant-numeric: tabular-nums; font-size: 14px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4ade80; margin-left: 8px; opacity: .25; transition: opacity .1s; }
+  .dot.live { opacity: 1; }
+  .dot.closed { background: #666; opacity: 1; }
+
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, #ff9a6a, #8f8fff) 0 0 / var(--p, 0%) 100% no-repeat, #2a2a2e;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%;
+    background: #fff; border: 0; box-shadow: 0 1px 6px rgba(0,0,0,.6);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 0;
+  }
+  input[type=range]::-moz-range-track { background: transparent; }
+
+  .check { display: flex; align-items: center; gap: 12px; font-size: 15px; margin-bottom: 14px; cursor: pointer; }
+  .check input { width: 20px; height: 20px; accent-color: #8f8fff; }
+  select {
+    background: #1c1c1e; color: #fff; border: 0; border-radius: 12px;
+    padding: 9px 12px; font: inherit; font-size: 14px;
+  }
+  .note { color: #6f6f78; font-size: 12.5px; margin: -6px 0 14px; }
+
+  #player { display: none; }
+  #player.show { display: block; }
+  #review { width: 100%; height: 84px; display: block; cursor: pointer; margin: 8px 0 12px; }
+  audio { width: 100%; }
+  .pl-actions { display: flex; justify-content: center; margin-top: 14px; padding-bottom: 8px; }
+  #plTitle { font-size: 15px; color: #cfcfd6; }
+
+  .item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 0; border-top: 1px solid #1e1e22; }
+  .item:first-child { border-top: 0; }
+  .item .meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .item .meta b { font-weight: 500; font-size: 15px; }
+  .item .meta span { color: #7d7d86; font-size: 13px; }
+  .item .acts { display: flex; gap: 6px; flex-shrink: 0; }
+  .item .pill { padding: 8px 12px; font-size: 13px; }
+  #libEmpty { color: #6f6f78; font-size: 14px; padding: 4px 0 14px; }
+  @media (max-width: 420px) { .item { flex-direction: column; align-items: flex-start; } }
+</style>
+</head>
+<body>
+  <div id="time">00:00.00</div>
+  <div id="status">Tap the button to record</div>
+  <canvas id="wave"></canvas>
+
+  <div class="controls">
+    <span style="width:64px"></span>
+    <button id="main" aria-label="Record"><span><i></i></span></button>
+    <button id="pause" aria-label="Pause" disabled>
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="#fff"><rect x="4" y="3" width="4" height="16" rx="1"/><rect x="14" y="3" width="4" height="16" rx="1"/></svg>
+    </button>
+  </div>
+
+  <section class="panel" id="player">
+    <h2>Your recording</h2>
+    <div id="plTitle"></div>
+    <canvas id="review" aria-label="Recording waveform. Click to seek."></canvas>
+    <audio id="audio" controls></audio>
+    <div class="pl-actions"><button class="pill" id="dl">Download MP3</button></div>
+  </section>
+
+  <section class="panel" id="studio">
+    <h2>Audio studio</h2>
+    <div class="sub">Changes apply live while you record. The saved MP3 has the effects baked in.</div>
+    <div class="chips" id="presets"></div>
+    <div id="groups"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Saved recordings</h2>
+    <div class="sub">Stored on this device, in this browser.</div>
+    <div id="libEmpty">Nothing yet. Every recording saves here automatically.</div>
+    <div id="lib"></div>
+  </section>
+
+<script>
+const $ = id => document.getElementById(id);
+const main = $('main'), pauseBtn = $('pause'), timeEl = $('time'),
+      statusEl = $('status'), audio = $('audio'), canvas = $('wave');
+const cx = canvas.getContext('2d');
+
+/* ---------------------------------------------------------------
+   Settings
+---------------------------------------------------------------- */
+const PARAMS = [
+  { g: 'Voice intensity', id: 'intensity', label: 'Intense, clean, sharp voice', min: 0, max: 100, fmt: v => v + '%' },
+  { g: 'Noise removal', id: 'gate',   label: 'Background noise gate', min: 0, max: 100, fmt: v => v ? v + '%' : 'Off', gateDot: true },
+  { g: 'Noise removal', id: 'rumble', label: 'Rumble and wind cut',   min: 0, max: 100, fmt: v => v ? Math.round(20 + v * 1.6) + ' Hz' : 'Off' },
+  { g: 'Noise removal', id: 'hiss',   label: 'Hiss cut',              min: 0, max: 100, fmt: v => v ? ((20000 - v * 110) / 1000).toFixed(1) + ' kHz' : 'Off' },
+  { g: 'Volume', id: 'boost', label: 'Volume boost',            min: 0,   max: 100, fmt: v => '+' + (v * 0.18).toFixed(1) + ' dB' },
+  { g: 'Volume', id: 'comp',  label: 'Even out loud and quiet', min: 0,   max: 100, fmt: v => v ? v + '%' : 'Off' },
+  { g: 'Tone',   id: 'warmth',  label: 'Warmth (body)',        min: -50, max: 50,  fmt: v => (v > 0 ? '+' : '') + (v * 0.12).toFixed(1) + ' dB' },
+  { g: 'Tone',   id: 'clarity', label: 'Clarity (presence)',   min: 0,   max: 100, fmt: v => v + '%' },
+  { g: 'Tone',   id: 'sharp',   label: 'Sharpness (crisp consonants)', min: 0, max: 100, fmt: v => v + '%' },
+  { g: 'Tone',   id: 'air',     label: 'Air (studio shine)',   min: 0,   max: 100, fmt: v => v + '%' },
+];
+
+const PRESETS = {
+  raw:     { name: 'Raw',           intensity: 0,  gate: 0,  rumble: 0,  hiss: 0,  boost: 0,  comp: 0,  warmth: 0,  clarity: 0,  sharp: 0,  air: 0 },
+  natural: { name: 'Natural',       intensity: 25, gate: 20, rumble: 25, hiss: 10, boost: 15, comp: 20, warmth: 5,  clarity: 25, sharp: 10, air: 20 },
+  studio:  { name: 'Studio mic',    intensity: 50, gate: 30, rumble: 35, hiss: 20, boost: 30, comp: 45, warmth: 15, clarity: 45, sharp: 25, air: 45 },
+  podcast: { name: 'Podcast',       intensity: 55, gate: 40, rumble: 45, hiss: 25, boost: 40, comp: 60, warmth: 25, clarity: 55, sharp: 30, air: 35 },
+  intense: { name: 'Intense clear', intensity: 85, gate: 45, rumble: 50, hiss: 30, boost: 55, comp: 75, warmth: 5,  clarity: 85, sharp: 60, air: 65 },
+};
+
+let vals = { ...PRESETS.studio }; delete vals.name;
+let opts = { ns: true, echo: false, kbps: 192, auto: true };
+let activePreset = 'studio';
+
+try {
+  const s = JSON.parse(localStorage.getItem('vr-settings') || 'null');
+  if (s) { Object.assign(vals, s.vals); Object.assign(opts, s.opts); activePreset = s.active ?? null; }
+} catch (e) {}
+const persist = () => { try { localStorage.setItem('vr-settings', JSON.stringify({ vals, opts, active: activePreset })); } catch (e) {} };
+
+/* ---------------------------------------------------------------
+   Studio UI
+---------------------------------------------------------------- */
+const sliderEls = {};
+let gateDotEl;
+
+function paintSlider(p) {
+  const el = sliderEls[p.id];
+  el.input.value = vals[p.id];
+  el.input.style.setProperty('--p', ((vals[p.id] - p.min) / (p.max - p.min) * 100) + '%');
+  el.val.textContent = p.fmt(vals[p.id]);
+}
+function setVal(id, v) {
+  vals[id] = v;
+  paintSlider(PARAMS.find(p => p.id === id));
+}
+function markPreset(key) {
+  activePreset = key;
+  document.querySelectorAll('#presets .chip').forEach(c => c.classList.toggle('on', c.dataset.k === key));
+}
+
+(function buildUI() {
+  const pc = $('presets');
+  for (const [k, p] of Object.entries(PRESETS)) {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.dataset.k = k; b.textContent = p.name;
+    b.onclick = () => {
+      PARAMS.forEach(q => setVal(q.id, p[q.id]));
+      markPreset(k); applyParams(); persist();
+    };
+    pc.append(b);
+  }
+
+  const groups = {};
+  for (const p of PARAMS) {
+    if (!groups[p.g]) {
+      const d = document.createElement('div'); d.className = 'group';
+      d.innerHTML = '<h3></h3>'; d.firstChild.textContent = p.g;
+      $('groups').append(d); groups[p.g] = d;
+    }
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = '<div class="top"><span class="lbl"></span><span class="val"></span></div><input type="range">';
+    row.querySelector('.lbl').textContent = p.label;
+    if (p.gateDot) {
+      gateDotEl = document.createElement('span'); gateDotEl.className = 'dot'; gateDotEl.title = 'Green: voice passing. Grey: gate closed.';
+      row.querySelector('.lbl').append(gateDotEl);
+    }
+    const input = row.querySelector('input');
+    input.min = p.min; input.max = p.max; input.step = 1; input.setAttribute('aria-label', p.label);
+    sliderEls[p.id] = { input, val: row.querySelector('.val') };
+    input.oninput = () => {
+      setVal(p.id, +input.value);
+      if (p.id === 'intensity') {
+        const v = +input.value;
+        setVal('clarity', Math.round(v * 0.9));
+        setVal('sharp',   Math.round(v * 0.7));
+        setVal('air',     Math.round(v * 0.6));
+        setVal('comp',    v ? Math.min(100, Math.round(20 + v * 0.6)) : 0);
+      }
+      markPreset(null); applyParams(); persist();
+    };
+    groups[p.g].append(row);
+    paintSlider(p);
+  }
+
+  const mkCheck = (parent, label, key, note) => {
+    const l = document.createElement('label'); l.className = 'check';
+    l.innerHTML = '<input type="checkbox"><span></span>';
+    l.querySelector('span').textContent = label;
+    const i = l.querySelector('input'); i.checked = opts[key];
+    i.onchange = () => { opts[key] = i.checked; persist(); };
+    parent.append(l);
+    if (note) { const n = document.createElement('div'); n.className = 'note'; n.textContent = note; parent.append(n); }
+  };
+  mkCheck(groups['Noise removal'], 'Browser noise suppression', 'ns', 'Extra cleanup by your device. Applies to the next recording.');
+  mkCheck(groups['Noise removal'], 'Echo cancellation', 'echo', 'Turn on only if you record without headphones while sound plays.');
+
+  const sv = document.createElement('div'); sv.className = 'group';
+  sv.innerHTML = '<h3>Saving</h3><div class="row"><div class="top"><span>MP3 quality</span><select id="kbps"><option value="128">128 kbps</option><option value="192">192 kbps</option><option value="256">256 kbps</option><option value="320">320 kbps (best)</option></select></div></div>';
+  $('groups').append(sv);
+  const sel = sv.querySelector('#kbps'); sel.value = opts.kbps;
+  sel.onchange = () => { opts.kbps = +sel.value; persist(); };
+  mkCheck(sv, 'Also download the MP3 when I stop', 'auto');
+  markPreset(activePreset);
+})();
+
+/* ---------------------------------------------------------------
+   Audio worklet code (noise gate + PCM capture)
+---------------------------------------------------------------- */
+const WORKLET = `
+class Gate extends AudioWorkletProcessor {
+  static get parameterDescriptors() { return [
+    { name: 'thr',   defaultValue: -50, minValue: -100, maxValue: 0, automationRate: 'k-rate' },
+    { name: 'floor', defaultValue: 0,   minValue: -80,  maxValue: 0, automationRate: 'k-rate' }
+  ]; }
+  constructor() {
+    super();
+    this.env = 0; this.gain = 1; this.hold = 0; this.open = true; this.n = 0;
+    this.rel  = Math.exp(-1 / (sampleRate * 0.04));
+    this.up   = 1 - Math.exp(-1 / (sampleRate * 0.004));
+    this.down = 1 - Math.exp(-1 / (sampleRate * 0.12));
+  }
+  process(ins, outs, p) {
+    const i = ins[0][0], o = outs[0][0];
+    if (!i || !o) return true;
+    const thr = Math.pow(10, p.thr[0] / 20), fl = Math.pow(10, p.floor[0] / 20);
+    for (let k = 0; k < i.length; k++) {
+      const a = Math.abs(i[k]);
+      this.env = a > this.env ? a : this.env * this.rel;
+      if (this.env > thr) { this.open = true; this.hold = sampleRate * 0.18; }
+      else if (this.hold > 0) this.hold--;
+      else if (this.env < thr * 0.6) this.open = false;
+      const t = this.open ? 1 : fl;
+      this.gain += (t - this.gain) * (t > this.gain ? this.up : this.down);
+      o[k] = i[k] * this.gain;
+    }
+    this.n += i.length;
+    if (this.n > 4800) { this.n = 0; this.port.postMessage({ open: this.open }); }
+    return true;
+  }
+}
+registerProcessor('gate', Gate);
+
+class Rec extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buf = new Float32Array(4096); this.pos = 0; this.on = false;
+    this.port.onmessage = e => {
+      if (e.data.type === 'on') this.on = e.data.value;
+      if (e.data.type === 'flush') { this.send(); this.port.postMessage({ flushed: true }); }
+    };
+  }
+  send() {
+    if (!this.pos) return;
+    const out = this.buf.slice(0, this.pos);
+    this.port.postMessage({ pcm: out }, [out.buffer]);
+    this.pos = 0;
+  }
+  process(ins) {
+    const i = ins[0][0];
+    if (!i) return true;
+    if (this.on) for (let k = 0; k < i.length; k++) {
+      this.buf[this.pos++] = i[k];
+      if (this.pos === 4096) this.send();
+    }
+    return true;
+  }
+}
+registerProcessor('rec', Rec);
+`;
+let workletURL;
+
+/* ---------------------------------------------------------------
+   Audio graph
+---------------------------------------------------------------- */
+let state = 'idle';               // idle | rec | paused
+let ctx, stream, G = null;        // G = graph nodes
+let enc, parts = [], samples = 0;
+let startCtx = 0, pausedAt = 0, pausedTotal = 0, finalDur = 0;
+let raf, wakeLock, flushResolve;
+let hist = [], acc = 0, lastPush = 0;
+
+const dbLin = db => Math.pow(10, db / 20);
+
+function applyParams() {
+  if (!G) return;
+  const t = ctx.currentTime, v = vals;
+  const set = (param, value) => param.setTargetAtTime(value, t, 0.03);
+
+  set(G.hp.frequency, v.rumble ? 20 + v.rumble * 1.6 : 20);
+  set(G.lp.frequency, Math.min(20000 - v.hiss * 110, ctx.sampleRate * 0.45));
+  if (G.gate) {
+    G.gate.parameters.get('thr').value   = -75 + v.gate * 0.45;
+    G.gate.parameters.get('floor').value = v.gate ? -(12 + v.gate * 0.28) : 0;
+  }
+  set(G.warm.gain, v.warmth * 0.12);
+  set(G.mud.gain, -v.clarity * 0.04);
+  set(G.pres.gain, v.clarity * 0.1);
+  set(G.sharp.gain, v.sharp * 0.07);
+  set(G.air.gain, v.air * 0.09);
+
+  const thr = v.comp ? -12 - v.comp * 0.18 : 0;
+  const ratio = 1 + v.comp * 0.07;
+  set(G.comp.threshold, thr);
+  set(G.comp.ratio, ratio);
+  const makeup = v.comp ? Math.min(10, -thr * (1 - 1 / ratio) * 0.45) : 0;
+  set(G.gain.gain, dbLin(v.boost * 0.18 + makeup));
+}
+
+function buildGraph(src, gate, recNode) {
+  const bq = (type, f, q = 0.707, gain = 0) => {
+    const n = ctx.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; n.gain.value = gain; return n;
+  };
+  const g = {
+    hp: bq('highpass', 20),
+    gate,
+    warm: bq('lowshelf', 140),
+    mud: bq('peaking', 280, 1),
+    pres: bq('peaking', 3200, 0.9),
+    sharp: bq('peaking', 6500, 1.2),
+    air: bq('highshelf', 11000),
+    lp: bq('lowpass', 20000),
+    comp: ctx.createDynamicsCompressor(),
+    gain: ctx.createGain(),
+    limiter: ctx.createDynamicsCompressor(),
+    analyser: ctx.createAnalyser(),
+    mute: ctx.createGain(),
+  };
+  g.comp.knee.value = 12; g.comp.attack.value = 0.005; g.comp.release.value = 0.2;
+  g.limiter.threshold.value = -1.5; g.limiter.knee.value = 0; g.limiter.ratio.value = 20;
+  g.limiter.attack.value = 0.002; g.limiter.release.value = 0.08;
+  g.analyser.fftSize = 1024; g.mute.gain.value = 0;
+
+  const chain = [g.hp, g.gate, g.warm, g.mud, g.pres, g.sharp, g.air, g.lp, g.comp, g.gain, g.limiter].filter(Boolean);
+  let prev = src;
+  for (const n of chain) { prev.connect(n); prev = n; }
+  g.limiter.connect(g.analyser);
+  g.limiter.connect(recNode);
+  g.analyser.connect(g.mute);
+  recNode.connect(g.mute);
+  g.mute.connect(ctx.destination);   // silent: keeps the graph running without feedback
+  g.recNode = recNode;
+  return g;
+}
+
+/* ---------------------------------------------------------------
+   Recording
+---------------------------------------------------------------- */
+function fmt(ms) {
+  const s = ms / 1000, m = Math.floor(s / 60);
+  return String(m).padStart(2, '0') + ':' + (s % 60).toFixed(2).padStart(5, '0');
+}
+const fmtShort = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+const curTime = () => state === 'paused' ? pausedAt - startCtx - pausedTotal : ctx.currentTime - startCtx - pausedTotal;
+const presetLabel = () => activePreset ? PRESETS[activePreset].name : 'Custom';
+
+function onPcm(f32) {
+  samples += f32.length;
+  const s16 = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    const s = Math.max(-1, Math.min(1, f32[i]));
+    s16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  for (let i = 0; i < s16.length; i += 1152) {
+    const b = enc.encodeBuffer(s16.subarray(i, i + 1152));
+    if (b.length) parts.push(new Int8Array(b));
+  }
+}
+
+async function start() {
+  if (typeof lamejs === 'undefined') {
+    statusEl.textContent = 'MP3 encoder did not load. Check your connection and reload.';
+    return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: opts.echo, noiseSuppression: opts.ns, autoGainControl: false }
+    });
+  } catch (e) {
+    statusEl.textContent = 'Microphone blocked. Allow access and try again.';
+    return;
+  }
+  try { ctx = new AudioContext({ sampleRate: 48000 }); } catch (e) { ctx = new AudioContext(); }
+  if (ctx.state === 'suspended') await ctx.resume();
+
+  let gate = null, recNode = null;
+  if (ctx.audioWorklet) {
+    try {
+      workletURL = workletURL || URL.createObjectURL(new Blob([WORKLET], { type: 'application/javascript' }));
+      await ctx.audioWorklet.addModule(workletURL);
+      const o = { channelCount: 1, channelCountMode: 'explicit', outputChannelCount: [1] };
+      gate = new AudioWorkletNode(ctx, 'gate', o);
+      gate.port.onmessage = e => { gateDotEl.classList.add('live'); gateDotEl.classList.toggle('closed', !e.data.open); };
+      recNode = new AudioWorkletNode(ctx, 'rec', o);
+      recNode.port.onmessage = e => {
+        if (e.data.pcm) onPcm(e.data.pcm);
+        if (e.data.flushed && flushResolve) flushResolve();
+      };
+    } catch (e) { gate = null; recNode = null; }
+  }
+  if (!recNode) {   // fallback: no noise gate, older capture method
+    recNode = ctx.createScriptProcessor(4096, 1, 1);
+    recNode.onaudioprocess = e => { if (state === 'rec') onPcm(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  }
+
+  G = buildGraph(ctx.createMediaStreamSource(stream), gate, recNode);
+  applyParams();
+
+  enc = new lamejs.Mp3Encoder(1, ctx.sampleRate, opts.kbps);
+  parts = []; samples = 0; hist = []; acc = 0; pausedTotal = 0;
+  $('player').classList.remove('show'); audio.pause();
+
+  startCtx = ctx.currentTime;
+  state = 'rec';
+  if (recNode.port) recNode.port.postMessage({ type: 'on', value: true });
+  try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (e) {}
+
+  main.classList.add('rec'); main.setAttribute('aria-label', 'Stop');
+  pauseBtn.disabled = false;
+  statusEl.textContent = 'Recording · ' + presetLabel();
+  raf = requestAnimationFrame(loop);
+}
+
+async function stop() {
+  if (state === 'idle') return;
+  state = 'idle';
+  main.disabled = true; pauseBtn.disabled = true;
+  statusEl.textContent = 'Saving…';
+
+  if (G.recNode.port) {
+    G.recNode.port.postMessage({ type: 'on', value: false });
+    await new Promise(r => { flushResolve = r; G.recNode.port.postMessage({ type: 'flush' }); setTimeout(r, 600); });
+  }
+  const end = enc.flush();
+  if (end.length) parts.push(new Int8Array(end));
+  finalDur = samples / ctx.sampleRate;
+
+  cancelAnimationFrame(raf);
+  stream.getTracks().forEach(t => t.stop());
+  try { ctx.close(); } catch (e) {}
+  try { wakeLock && wakeLock.release(); } catch (e) {}
+  G = null;
+  gateDotEl.classList.remove('live', 'closed');
+
+  timeEl.textContent = fmt(finalDur * 1000);
+  main.classList.remove('rec'); main.setAttribute('aria-label', 'Record'); main.disabled = false;
+  hist = []; drawIdle();
+
+  if (finalDur < 0.3) { statusEl.textContent = 'Too short. Nothing saved.'; return; }
+
+  const rec = { id: Date.now(), duration: finalDur, size: 0, blob: new Blob(parts, { type: 'audio/mpeg' }) };
+  rec.size = rec.blob.size;
+  if (opts.auto) download(rec);
+  showPlayer(rec);
+  try {
+    await dbPut(rec);
+    statusEl.textContent = 'Saved as MP3' + (opts.auto ? ' and downloaded' : '');
+    renderLib();
+  } catch (e) {
+    statusEl.textContent = 'Recorded, but the library could not save it. Use Download MP3.';
+  }
+}
+
+function togglePause() {
+  if (state === 'rec') {
+    state = 'paused'; pausedAt = ctx.currentTime;
+    G.recNode.port && G.recNode.port.postMessage({ type: 'on', value: false });
+    statusEl.textContent = 'Paused';
+  } else if (state === 'paused') {
+    pausedTotal += ctx.currentTime - pausedAt;
+    state = 'rec';
+    G.recNode.port && G.recNode.port.postMessage({ type: 'on', value: true });
+    statusEl.textContent = 'Recording · ' + presetLabel();
+  }
+}
+
+main.onclick = () => state === 'idle' ? start() : stop();
+pauseBtn.onclick = togglePause;
+window.addEventListener('beforeunload', e => { if (state !== 'idle') { e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------------------------------------------------------------
+   Live waveform
+---------------------------------------------------------------- */
+function sizeCanvas(c) {
+  const dpr = devicePixelRatio || 1;
+  const w = Math.round(c.clientWidth * dpr), h = Math.round(c.clientHeight * dpr);
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  return dpr;
+}
+
+function drawIdle() {
+  const dpr = sizeCanvas(canvas);
+  cx.clearRect(0, 0, canvas.width, canvas.height);
+  cx.fillStyle = '#3a3a48';
+  const step = 5 * dpr;
+  for (let x = 0; x < canvas.width; x += step) cx.fillRect(x, canvas.height / 2 - dpr, 3 * dpr, 2 * dpr);
+}
+
+const wbuf = new Float32Array(1024);
+function loop(ts) {
+  raf = requestAnimationFrame(loop);
+  G.analyser.getFloatTimeDomainData(wbuf);
+  let pk = 0;
+  for (let i = 0; i < wbuf.length; i++) { const a = Math.abs(wbuf[i]); if (a > pk) pk = a; }
+  acc = Math.max(acc, pk);
+  if (state === 'rec' && ts - lastPush > 45) {
+    hist.push(acc); acc = 0; lastPush = ts;
+    if (hist.length > 4000) hist.splice(0, 2000);
+  }
+  timeEl.textContent = fmt(Math.max(0, curTime()) * 1000);
+
+  const dpr = sizeCanvas(canvas), W = canvas.width, H = canvas.height;
+  const bw = 3 * dpr, gap = 2 * dpr, n = Math.floor(W / (bw + gap));
+  cx.clearRect(0, 0, W, H);
+  const grad = cx.createLinearGradient(0, 0, W, 0);
+  grad.addColorStop(0, '#ff9a6a'); grad.addColorStop(.5, '#d58aff'); grad.addColorStop(1, '#5b8cff');
+  const shown = hist.slice(-n);
+  const off = n - shown.length;
+  for (let i = 0; i < n; i++) {
+    const x = i * (bw + gap);
+    const j = i - off;
+    if (j < 0) { cx.fillStyle = '#2c2c38'; cx.fillRect(x, H / 2 - dpr, bw, 2 * dpr); continue; }
+    const p = shown[j];
+    const h = Math.max(3 * dpr, Math.pow(Math.min(1, p), 0.6) * H);
+    cx.fillStyle = p > 0.97 ? '#ff4d4d' : grad;
+    cx.fillRect(x, (H - h) / 2, bw, h);
+  }
+}
+
+/* ---------------------------------------------------------------
+   Player + review waveform
+---------------------------------------------------------------- */
+let currentRec = null, peaks = null;
+const review = $('review');
+
+async function computePeaks(blob, n = 200) {
+  const ac = new AudioContext();
+  try {
+    const buf = await ac.decodeAudioData(await blob.arrayBuffer());
+    const d = buf.getChannelData(0), size = Math.max(1, Math.floor(d.length / n));
+    const out = new Float32Array(n);
+    let max = 0;
+    for (let i = 0; i < n; i++) {
+      let m = 0;
+      for (let j = i * size; j < Math.min(d.length, (i + 1) * size); j += 4) { const a = Math.abs(d[j]); if (a > m) m = a; }
+      out[i] = m; if (m > max) max = m;
+    }
+    for (let i = 0; i < n; i++) out[i] = Math.pow(out[i] / (max || 1), 0.7);
+    return out;
+  } finally { ac.close(); }
+}
+
+function drawReview(p) {
+  const dpr = sizeCanvas(review), g = review.getContext('2d'), W = review.width, H = review.height;
+  g.clearRect(0, 0, W, H);
+  if (!peaks) { g.fillStyle = '#2c2c38'; g.fillRect(0, H / 2 - dpr, W, 2 * dpr); return; }
+  const n = peaks.length, w = W / n;
+  for (let i = 0; i < n; i++) {
+    const h = Math.max(3 * dpr, peaks[i] * H * 0.92);
+    g.fillStyle = (i + 0.5) / n <= p ? '#b18cff' : '#3b3b4a';
+    g.fillRect(i * w + w * 0.2, (H - h) / 2, w * 0.6, h);
+  }
+}
+const playFrac = () => (audio.duration && isFinite(audio.duration)) ? audio.currentTime / audio.duration : (currentRec ? audio.currentTime / currentRec.duration : 0);
+function playLoop() { drawReview(playFrac()); if (!audio.paused) requestAnimationFrame(playLoop); }
+audio.onplay = playLoop;
+['pause', 'seeked', 'ended', 'timeupdate'].forEach(ev => audio.addEventListener(ev, () => { if (audio.paused) drawReview(playFrac()); }));
+review.onclick = e => {
+  if (!currentRec) return;
+  const r = review.getBoundingClientRect();
+  const dur = (audio.duration && isFinite(audio.duration)) ? audio.duration : currentRec.duration;
+  audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * dur;
+};
+window.addEventListener('resize', () => { drawReview(playFrac()); if (state === 'idle') drawIdle(); });
+
+const recTitle = r => new Date(r.id).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+async function showPlayer(rec) {
+  currentRec = rec; peaks = null;
+  if (audio.dataset.url) URL.revokeObjectURL(audio.dataset.url);
+  const u = URL.createObjectURL(rec.blob);
+  audio.src = u; audio.dataset.url = u;
+  $('plTitle').textContent = recTitle(rec) + ' · ' + fmtShort(rec.duration);
+  $('player').classList.add('show');
+  drawReview(0);
+  try {
+    const p = await computePeaks(rec.blob);
+    if (currentRec === rec) { peaks = p; drawReview(playFrac()); }
+  } catch (e) {}
+}
+
+function download(rec) {
+  const d = new Date(rec.id), z = n => String(n).padStart(2, '0');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(rec.blob);
+  a.download = `recording-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}.mp3`;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+$('dl').onclick = () => currentRec && download(currentRec);
+
+/* ---------------------------------------------------------------
+   Local library (IndexedDB)
+---------------------------------------------------------------- */
+const dbp = new Promise((res, rej) => {
+  const r = indexedDB.open('voice-recorder', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('recs', { keyPath: 'id' });
+  r.onsuccess = () => res(r.result);
+  r.onerror = () => rej(r.error);
+});
+const tx = (mode, fn) => dbp.then(d => new Promise((res, rej) => {
+  const t = d.transaction('recs', mode), req = fn(t.objectStore('recs'));
+  t.oncomplete = () => res(req && req.result);
+  t.onerror = () => rej(t.error);
+  t.onabort = () => rej(t.error);
+}));
+const dbPut = rec => tx('readwrite', s => s.put(rec));
+
+async function renderLib() {
+  let recs = [];
+  try { recs = await tx('readonly', s => s.getAll()); } catch (e) {}
+  recs.sort((a, b) => b.id - a.id);
+  const el = $('lib'); el.innerHTML = '';
+  $('libEmpty').hidden = recs.length > 0;
+  for (const r of recs) {
+    const row = document.createElement('div'); row.className = 'item';
+    row.innerHTML = '<div class="meta"><b></b><span></span></div><div class="acts">' +
+      `<button class="pill" data-act="play" data-id="${r.id}">Play</button>` +
+      `<button class="pill" data-act="dl" data-id="${r.id}">Download</button>` +
+      `<button class="pill danger" data-act="del" data-id="${r.id}">Delete</button></div>`;
+    row.querySelector('b').textContent = recTitle(r);
+    row.querySelector('span').textContent = fmtShort(r.duration) + ' · ' + (r.size / 1048576).toFixed(1) + ' MB · MP3';
+    el.append(row);
+  }
+}
+$('lib').onclick = async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const id = +b.dataset.id;
+  if (b.dataset.act === 'del') {
+    if (!confirm('Delete this recording from this device?')) return;
+    await tx('readwrite', s => s.delete(id)); renderLib();
+    if (currentRec && currentRec.id === id) { audio.pause(); $('player').classList.remove('show'); currentRec = null; }
+    return;
+  }
+  const rec = await tx('readonly', s => s.get(id));
+  if (!rec) return;
+  if (b.dataset.act === 'dl') download(rec);
+  else { await showPlayer(rec); $('player').scrollIntoView({ behavior: 'smooth', block: 'center' }); audio.play().catch(() => {}); }
+};
+
+drawIdle();
+renderLib();
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+</script>
+</body>
+</html>
